@@ -46,12 +46,12 @@ class IteratorItems(AsyncIterator):
             try:
                 # get new items
                 self._items = await self._iterator.next()
-            except NoMoreItems:
+            except NoMoreItems as e:
                 # if there aren't any more items, reset and break the loop
                 self._position = 0
                 self._global_position = 0
                 self._items = []
-                raise StopAsyncIteration
+                raise StopAsyncIteration from e
 
         if self._max_items is not None and self._global_position >= self._max_items:
             raise StopAsyncIteration
@@ -59,9 +59,9 @@ class IteratorItems(AsyncIterator):
         # if we got here we know there are more items
         try:
             item = self._items[self._position]
-        except IndexError:
+        except IndexError as exc:
             # edge case for group roles
-            raise StopAsyncIteration
+            raise StopAsyncIteration from exc
         # we advance the iterator by one for the next iteration
         self._position += 1
         self._global_position += 1
@@ -81,10 +81,9 @@ class IteratorPages(AsyncIterator):
 
     async def __anext__(self):
         try:
-            page = await self._iterator.next()
-            return page
-        except NoMoreItems:
-            raise StopAsyncIteration
+            return await self._iterator.next()
+        except NoMoreItems as e:
+            raise StopAsyncIteration from e
 
 
 class RobloxIterator:

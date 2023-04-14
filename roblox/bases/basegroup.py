@@ -263,11 +263,10 @@ class BaseGroup(BaseItem):
         """
         roles = await self.get_roles()
 
-        role = next((role for role in roles if role.rank == rank), None)
-        if not role:
+        if role := next((role for role in roles if role.rank == rank), None):
+            await self.set_role(int(user), role)
+        else:
             raise InvalidRole(f"Role with rank number {rank} does not exist.")
-
-        await self.set_role(int(user), role)
 
     async def kick_user(self, user: UserOrUserId):
         """

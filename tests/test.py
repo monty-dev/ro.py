@@ -52,8 +52,6 @@ async def main():
     """
     🥺
     """
-    # set up basic authentication
-    is_authenticated: bool = False
     authenticated_user: Optional[User]
 
     try:
@@ -61,9 +59,7 @@ async def main():
     except Unauthorized:
         authenticated_user = None
 
-    if authenticated_user:
-        is_authenticated = True
-
+    is_authenticated = bool(authenticated_user)
     # basic logging
     if not is_authenticated:
         logger.warning("Not all checks can complete because ro.py can't authenticate.")

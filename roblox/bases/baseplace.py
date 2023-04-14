@@ -42,11 +42,10 @@ class BasePlace(BaseAsset):
         from ..jobs import GameInstances
 
         instances_response = await self._shared.requests.get(
-            url=self._shared.url_generator.get_url("www", f"games/getgameinstancesjson"),
-            params={
-                "placeId": self.id,
-                "startIndex": start_index
-            }
+            url=self._shared.url_generator.get_url(
+                "www", "games/getgameinstancesjson"
+            ),
+            params={"placeId": self.id, "startIndex": start_index},
         )
         instances_data = instances_response.json()
         return GameInstances(

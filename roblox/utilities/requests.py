@@ -4,10 +4,11 @@ This module contains classes used internally by ro.py for sending requests to Ro
 
 """
 
+
 from __future__ import annotations
+import contextlib
 from typing import Dict, Optional
 
-import asyncio
 from json import JSONDecodeError
 
 from httpx import AsyncClient, Response
@@ -15,27 +16,7 @@ from httpx import AsyncClient, Response
 from .exceptions import get_exception_from_status_code
 from ..utilities.url import URLGenerator
 
-_xcsrf_allowed_methods: Dict[str, bool] = {
-    "post": True,
-    "put": True,
-    "patch": True,
-    "delete": True
-}
-
-
-class CleanAsyncClient(AsyncClient):
-    """
-    This is a clean-on-delete version of httpx.AsyncClient.
-    """
-
-    def __init__(self):
-        super().__init__()
-
-    def __del__(self):
-        try:
-            asyncio.get_event_loop().create_task(self.aclose())
-        except RuntimeError:
-            pass
+_xcsrf_allowed_methods: Dict[str, bool] = {"post": True, "put": True, "patch": True, "delete": True}
 
 
 class Requests:
@@ -48,12 +29,7 @@ class Requests:
         url_generator: URL generator for ban parsing.
     """
 
-    def __init__(
-            self,
-            url_generator: URLGenerator = None,
-            session: CleanAsyncClient = None,
-            xcsrf_token_name: str = "X-CSRF-Token"
-    ):
+    def __init__(self, url_generator: URLGenerator = None, session: AsyncClient = None, xcsrf_token_name: str = "X-CSRF-Token"):
         """
         Arguments:
             session: A custom session object to use for sending requests, compatible with httpx.AsyncClient.
@@ -61,13 +37,9 @@ class Requests:
             url_generator: URL generator for ban parsing.
         """
         self._url_generator: Optional[URLGenerator] = url_generator
-        self.session: CleanAsyncClient
+        self.session: AsyncClient
 
-        if session is None:
-            self.session = CleanAsyncClient()
-        else:
-            self.session = session
-
+        self.session = AsyncClient() if session is None else session
         self.xcsrf_token_name: str = xcsrf_token_name
 
         self.session.headers["User-Agent"] = "Roblox/WinInet"
@@ -101,25 +73,19 @@ class Requests:
             # Streamed responses should not be decoded, so we immediately return the response.
             return response
 
-        if response.is_error:
-            # Something went wrong, parse an error
-            content_type = response.headers.get("Content-Type")
-            errors = None
-            if content_type and content_type.startswith("application/json"):
-                data = None
-                try:
-                    data = response.json()
-                except JSONDecodeError:
-                    pass
-                errors = data and data.get("errors")
-
-            exception = get_exception_from_status_code(response.status_code)(
-                response=response,
-                errors=errors
-            )
-            raise exception
-        else:
+        if not response.is_error:
             return response
+        # Something went wrong, parse an error
+        content_type = response.headers.get("Content-Type")
+        errors = None
+        if content_type and content_type.startswith("application/json"):
+            data = None
+            with contextlib.suppress(JSONDecodeError):
+                data = response.json()
+            errors = data and data.get("errors")
+
+        exception = get_exception_from_status_code(response.status_code)(response=response, errors=errors)
+        raise exception
 
     async def get(self, *args, **kwargs) -> Response:
         """

@@ -5,7 +5,7 @@ Contains the Client, which is the core object at the center of all ro.py applica
 """
 
 from typing import Union, List
-
+import httpx
 from .account import AccountProvider
 from .assets import EconomyAsset
 from .badges import Badge
@@ -27,8 +27,17 @@ from .presence import PresenceProvider
 from .thumbnails import ThumbnailProvider
 from .universes import Universe
 from .users import User
-from .utilities.exceptions import BadRequest, NotFound, AssetNotFound, BadgeNotFound, GroupNotFound, PlaceNotFound, \
-    PluginNotFound, UniverseNotFound, UserNotFound
+from .utilities.exceptions import (
+    BadRequest,
+    NotFound,
+    AssetNotFound,
+    BadgeNotFound,
+    GroupNotFound,
+    PlaceNotFound,
+    PluginNotFound,
+    UniverseNotFound,
+    UserNotFound,
+)
 from .utilities.iterators import PageIterator
 from .utilities.requests import Requests
 from .utilities.shared import ClientSharedObject
@@ -49,22 +58,16 @@ class Client:
         account: The account provider object.
     """
 
-    def __init__(self, token: str = None, base_url: str = "roblox.com"):
+    def __init__(self, token: str = None, base_url: str = "roblox.com", httpx_client: httpx.AsyncClient = None):
         """
         Arguments:
             token: A .ROBLOSECURITY token to authenticate the client with.
             base_url: The base URL to use when sending requests.
         """
         self._url_generator: URLGenerator = URLGenerator(base_url=base_url)
-        self._requests: Requests = Requests(
-            url_generator=self._url_generator
-        )
+        self._requests: Requests = Requests(url_generator=self._url_generator, session=httpx_client)
 
-        self._shared: ClientSharedObject = ClientSharedObject(
-            client=self,
-            requests=self._requests,
-            url_generator=self._url_generator
-        )
+        self._shared: ClientSharedObject = ClientSharedObject(client=self, requests=self._requests, url_generator=self._url_generator)
 
         self.presence: PresenceProvider = PresenceProvider(shared=self._shared)
         self.thumbnails: ThumbnailProvider = ThumbnailProvider(shared=self._shared)
@@ -112,20 +115,13 @@ class Client:
             A user object.
         """
         try:
-            user_response = await self._requests.get(
-                url=self._shared.url_generator.get_url("users", f"v1/users/{user_id}")
-            )
+            user_response = await self._requests.get(url=self._shared.url_generator.get_url("users", f"v1/users/{user_id}"))
         except NotFound as exception:
-            raise UserNotFound(
-                message="Invalid user.",
-                response=exception.response
-            ) from None
+            raise UserNotFound(message="Invalid user.", response=exception.response) from None
         user_data = user_response.json()
         return User(shared=self._shared, data=user_data)
 
-    async def get_authenticated_user(
-            self, expand: bool = True
-    ) -> Union[User, PartialUser]:
+    async def get_authenticated_user(self, expand: bool = True) -> Union[User, PartialUser]:
         """
         Grabs the authenticated user.
 
@@ -135,9 +131,7 @@ class Client:
         Returns:
             The authenticated user.
         """
-        authenticated_user_response = await self._requests.get(
-            url=self._shared.url_generator.get_url("users", f"v1/users/authenticated")
-        )
+        authenticated_user_response = await self._requests.get(url=self._shared.url_generator.get_url("users", "v1/users/authenticated"))
         authenticated_user_data = authenticated_user_response.json()
 
         if expand:
@@ -146,10 +140,10 @@ class Client:
             return PartialUser(shared=self._shared, data=authenticated_user_data)
 
     async def get_users(
-            self,
-            user_ids: List[int],
-            exclude_banned_users: bool = False,
-            expand: bool = False,
+        self,
+        user_ids: List[int],
+        exclude_banned_users: bool = False,
+        expand: bool = False,
     ) -> Union[List[PartialUser], List[User]]:
         """
         Grabs a list of users corresponding to each user ID in the list.
@@ -163,7 +157,7 @@ class Client:
             A List of Users or partial users.
         """
         users_response = await self._requests.post(
-            url=self._shared.url_generator.get_url("users", f"v1/users"),
+            url=self._shared.url_generator.get_url("users", "v1/users"),
             json={"userIds": user_ids, "excludeBannedUsers": exclude_banned_users},
         )
         users_data = users_response.json()["data"]
@@ -171,16 +165,13 @@ class Client:
         if expand:
             return [await self.get_user(user_data["id"]) for user_data in users_data]
         else:
-            return [
-                PartialUser(shared=self._shared, data=user_data)
-                for user_data in users_data
-            ]
+            return [PartialUser(shared=self._shared, data=user_data) for user_data in users_data]
 
     async def get_users_by_usernames(
-            self,
-            usernames: List[str],
-            exclude_banned_users: bool = False,
-            expand: bool = False,
+        self,
+        usernames: List[str],
+        exclude_banned_users: bool = False,
+        expand: bool = False,
     ) -> Union[List[RequestedUsernamePartialUser], List[User]]:
         """
         Grabs a list of users corresponding to each username in the list.
@@ -194,21 +185,21 @@ class Client:
             A list of User or RequestedUsernamePartialUser, depending on the expand argument.
         """
         users_response = await self._requests.post(
-            url=self._shared.url_generator.get_url("users", f"v1/usernames/users"),
-            json={"usernames": usernames, "excludeBannedUsers": exclude_banned_users},
+            url=self._shared.url_generator.get_url("users", "v1/usernames/users"),
+            json={
+                "usernames": usernames,
+                "excludeBannedUsers": exclude_banned_users,
+            },
         )
         users_data = users_response.json()["data"]
 
         if expand:
             return [await self.get_user(user_data["id"]) for user_data in users_data]
         else:
-            return [
-                RequestedUsernamePartialUser(shared=self._shared, data=user_data)
-                for user_data in users_data
-            ]
+            return [RequestedUsernamePartialUser(shared=self._shared, data=user_data) for user_data in users_data]
 
     async def get_user_by_username(
-            self, username: str, exclude_banned_users: bool = False, expand: bool = True
+        self, username: str, exclude_banned_users: bool = False, expand: bool = True
     ) -> Union[RequestedUsernamePartialUser, User]:
         """
         Grabs a user corresponding to the passed username.
@@ -247,8 +238,7 @@ class Client:
         """
         return BaseUser(shared=self._shared, user_id=user_id)
 
-    def user_search(self, keyword: str, page_size: int = 10,
-                    max_items: int = None) -> PageIterator:
+    def user_search(self, keyword: str, page_size: int = 10, max_items: int = None) -> PageIterator:
         """
         Search for users with a keyword.
 
@@ -262,7 +252,7 @@ class Client:
         """
         return PageIterator(
             shared=self._shared,
-            url=self._shared.url_generator.get_url("users", f"v1/users/search"),
+            url=self._shared.url_generator.get_url("users", "v1/users/search"),
             page_size=page_size,
             max_items=max_items,
             extra_parameters={"keyword": keyword},
@@ -281,14 +271,9 @@ class Client:
             A Group.
         """
         try:
-            group_response = await self._requests.get(
-                url=self._shared.url_generator.get_url("groups", f"v1/groups/{group_id}")
-            )
+            group_response = await self._requests.get(url=self._shared.url_generator.get_url("groups", f"v1/groups/{group_id}"))
         except BadRequest as exception:
-            raise GroupNotFound(
-                message="Invalid group.",
-                response=exception.response
-            ) from None
+            raise GroupNotFound(message="Invalid group.", response=exception.response) from None
         group_data = group_response.json()
         return Group(shared=self._shared, data=group_data)
 
@@ -324,10 +309,7 @@ class Client:
             params={"universeIds": universe_ids},
         )
         universes_data = universes_response.json()["data"]
-        return [
-            Universe(shared=self._shared, data=universe_data)
-            for universe_data in universes_data
-        ]
+        return [Universe(shared=self._shared, data=universe_data) for universe_data in universes_data]
 
     async def get_universe(self, universe_id: int) -> Universe:
         """
@@ -373,15 +355,11 @@ class Client:
             A list of Places.
         """
         places_response = await self._requests.get(
-            url=self._shared.url_generator.get_url(
-                "games", f"v1/games/multiget-place-details"
-            ),
+            url=self._shared.url_generator.get_url("games", "v1/games/multiget-place-details"),
             params={"placeIds": place_ids},
         )
         places_data = places_response.json()
-        return [
-            Place(shared=self._shared, data=place_data) for place_data in places_data
-        ]
+        return [Place(shared=self._shared, data=place_data) for place_data in places_data]
 
     async def get_place(self, place_id: int) -> Place:
         """
@@ -427,16 +405,9 @@ class Client:
             An Asset.
         """
         try:
-            asset_response = await self._requests.get(
-                url=self._shared.url_generator.get_url(
-                    "economy", f"v2/assets/{asset_id}/details"
-                )
-            )
+            asset_response = await self._requests.get(url=self._shared.url_generator.get_url("economy", f"v2/assets/{asset_id}/details"))
         except BadRequest as exception:
-            raise AssetNotFound(
-                message="Invalid asset.",
-                response=exception.response
-            ) from None
+            raise AssetNotFound(message="Invalid asset.", response=exception.response) from None
         asset_data = asset_response.json()
         return EconomyAsset(shared=self._shared, data=asset_data)
 
@@ -467,14 +438,7 @@ class Client:
         Returns:
             A list of Plugins.
         """
-        plugins_response = await self._requests.get(
-            url=self._shared.url_generator.get_url(
-                "develop", "v1/plugins"
-            ),
-            params={
-                "pluginIds": plugin_ids
-            }
-        )
+        plugins_response = await self._requests.get(url=self._shared.url_generator.get_url("develop", "v1/plugins"), params={"pluginIds": plugin_ids})
         plugins_data = plugins_response.json()["data"]
         return [Plugin(shared=self._shared, data=plugin_data) for plugin_data in plugins_data]
 
@@ -522,16 +486,9 @@ class Client:
             A Badge.
         """
         try:
-            badge_response = await self._requests.get(
-                url=self._shared.url_generator.get_url(
-                    "badges", f"v1/badges/{badge_id}"
-                )
-            )
+            badge_response = await self._requests.get(url=self._shared.url_generator.get_url("badges", f"v1/badges/{badge_id}"))
         except NotFound as exception:
-            raise BadgeNotFound(
-                message="Invalid badge.",
-                response=exception.response
-            ) from None
+            raise BadgeNotFound(message="Invalid badge.", response=exception.response) from None
         badge_data = badge_response.json()
         return Badge(shared=self._shared, data=badge_data)
 
